@@ -153,9 +153,64 @@ document.querySelectorAll(".tab").forEach(b => {
     $("tab-guard").style.display = b.dataset.tab === "guard" ? "" : "none";
     $("tab-stream").style.display = b.dataset.tab === "stream" ? "" : "none";
     $("tab-events").style.display = b.dataset.tab === "events" ? "" : "none";
+    $("tab-escrow").style.display = b.dataset.tab === "escrow" ? "" : "none";
     if (b.dataset.tab === "events") fetchEvents();
   };
 });
+
+// ---- escrow / milestone payments, mirrors arc-conditional-pay ----
+function jobs() { return JSON.parse(localStorage.getItem("jobs") || "[]"); }
+function saveJobs(a) { localStorage.setItem("jobs", JSON.stringify(a)); }
+
+function createJob() {
+  const payee = $("cPayee").value.trim().toLowerCase();
+  const amount = parseFloat($("cAmt").value);
+  if (!/^0x[0-9a-f]{40}$/.test(payee)) { $("cMsg").textContent = "invalid payee"; return; }
+  if (!(amount > 0)) { $("cMsg").textContent = "amount must be positive"; return; }
+  const arr = jobs();
+  arr.unshift({ id: Date.now(), payee, amount, memo: $("cMemo").value.trim(), status: "open" });
+  saveJobs(arr);
+  $("cPayee").value = $("cAmt").value = $("cMemo").value = "";
+  $("cMsg").textContent = "held"; setTimeout(() => ($("cMsg").textContent = ""), 1500);
+  renderJobs();
+}
+
+async function releaseJob(id) {
+  if (!signer) { $("cMsg").textContent = "connect your wallet first"; return; }
+  const arr = jobs();
+  const j = arr.find(x => x.id === id);
+  if (!j || j.status !== "open") return;
+  try {
+    const tx = await signer.sendTransaction({ to: j.payee, value: ethers.parseUnits(String(j.amount), 18) });
+    j.status = "released"; j.tx = tx.hash;
+    logRow(j.payee, j.amount, "milestone", tx.hash);
+    saveJobs(arr); renderJobs(); tx.wait().then(refreshBalance);
+  } catch (e) {
+    $("cMsg").textContent = "rejected: " + (e.shortMessage || e.message || e);
+  }
+}
+function cancelJob(id) {
+  const arr = jobs();
+  const j = arr.find(x => x.id === id);
+  if (j && j.status === "open") { j.status = "cancelled"; saveJobs(arr); renderJobs(); }
+}
+
+function renderJobs() {
+  const arr = jobs();
+  const body = $("cList").querySelector("tbody");
+  body.innerHTML = "";
+  $("cEmpty").style.display = arr.length ? "none" : "block";
+  for (const j of arr) {
+    const tr = document.createElement("tr");
+    let action = "";
+    if (j.status === "open") action = `<button class="ghost" data-rel="${j.id}">Verify &amp; release</button> <button class="ghost" data-cancel="${j.id}">Cancel</button>`;
+    else if (j.tx) action = `<a href="${EXPLORER}/tx/${j.tx}" target="_blank" rel="noopener">view</a>`;
+    tr.innerHTML = `<td><code>${j.payee.slice(0,6)}…${j.payee.slice(-4)}</code></td><td>${j.amount}</td><td>${j.memo || "-"}</td><td>${j.status}</td><td>${action}</td>`;
+    body.appendChild(tr);
+  }
+  body.querySelectorAll("[data-rel]").forEach(b => b.onclick = () => releaseJob(Number(b.dataset.rel)));
+  body.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => cancelJob(Number(b.dataset.cancel)));
+}
 
 // ---- events feed (read side, mirrors arc-event-hub) ----
 async function fetchEvents() {
@@ -263,8 +318,10 @@ function renderSchedules() {
 $("sCreate").onclick = createSchedule;
 $("sRun").onclick = runDue;
 $("evRefresh").onclick = fetchEvents;
+$("cCreate").onclick = createJob;
 
 loadPolicy();
 renderLog();
 renderSchedules();
+renderJobs();
 if (window.ethereum) window.ethereum.on?.("accountsChanged", () => location.reload());
