@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arc Agent Guard Demo</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --line:#262d36; --txt:#e6edf3; --muted:#8b949e;
+    --accent:#4c9aff; --good:#2ea043; --bad:#da3633; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+  h1{font-size:24px;margin:0 0 2px}
+  .sub{color:var(--muted);margin:0 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:14px 0}
+  .card h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label{display:block;font-size:13px;color:var(--muted);margin:8px 0 4px}
+  input,textarea{width:100%;background:#0d1117;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:9px 11px;font:inherit}
+  textarea{min-height:64px;resize:vertical}
+  button{background:var(--accent);border:0;border-radius:8px;color:#fff;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .pill{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .pill.ok{color:var(--good);border-color:#1f6f33}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .big{font-size:30px;font-weight:700}
+  .muted{color:var(--muted)}
+  .decision{padding:10px 12px;border-radius:8px;margin-top:12px;font-size:14px;display:none}
+  .decision.allow{display:block;background:#0f2417;border:1px solid #1f6f33;color:#7ee2a8}
+  .decision.deny{display:block;background:#2a0f10;border:1px solid #6f2320;color:#ff9a96}
+  .decision.appr{display:block;background:#2a230f;border:1px solid #6f5a23;color:#f1d488}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  a{color:var(--accent);text-decoration:none}
+  .foot{margin-top:26px;color:var(--muted);font-size:13px}
+  code{background:#0d1117;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Arc Agent Guard</h1>
+  <p class="sub">Give a wallet spending rules, then watch the guard allow or block USDC payments on Arc testnet. A live demo of <a href="https://github.com/Mnorbert87/arc-agent-guard" target="_blank" rel="noopener">arc-agent-guard</a>.</p>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <span id="netpill" class="pill">not connected</span>
+        <span id="addr" class="muted" style="margin-left:8px"></span>
+      </div>
+      <button id="connect">Connect MetaMask</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Balance</h2>
+    <div class="big"><span id="bal">0.00</span> <span class="muted" style="font-size:16px">USDC</span></div>
+    <p class="muted" style="margin:8px 0 0">No funds? Get testnet USDC at <a href="https://faucet.circle.com" target="_blank" rel="noopener">faucet.circle.com</a> and refresh.</p>
+  </div>
+
+  <div class="card">
+    <h2>Spending policy</h2>
+    <div class="grid2">
+      <div><label>Per-payment max (USDC)</label><input id="perTx" type="number" step="0.01" placeholder="e.g. 5" /></div>
+      <div><label>Daily cap (USDC)</label><input id="daily" type="number" step="0.01" placeholder="e.g. 20" /></div>
+    </div>
+    <div class="grid2">
+      <div><label>Approval threshold (USDC)</label><input id="appr" type="number" step="0.01" placeholder="ask me above this" /></div>
+      <div><label>Spent today</label><input id="spent" disabled /></div>
+    </div>
+    <label>Allowlist (one 0x address per line; empty = deny everyone)</label>
+    <textarea id="allow" placeholder="0x..."></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="savePolicy" class="ghost">Save policy</button>
+      <span id="policySaved" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Guarded send</h2>
+    <label>Recipient address</label>
+    <input id="to" placeholder="0x..." />
+    <label>Amount (USDC)</label>
+    <input id="amt" type="number" step="0.0001" placeholder="e.g. 1.5" />
+    <div class="row" style="margin-top:12px">
+      <button id="send">Guarded send</button>
+      <button id="check" class="ghost">Dry run</button>
+    </div>
+    <div id="decision" class="decision"></div>
+  </div>
+
+  <div class="card">
+    <h2>Audit log</h2>
+    <table id="log"><thead><tr><th>Time</th><th>To</th><th>USDC</th><th>Decision</th><th>Tx</th></tr></thead><tbody></tbody></table>
+    <p id="logEmpty" class="muted">Nothing yet. Every attempt, allowed or blocked, is recorded here.</p>
+  </div>
+
+  <p class="foot">
+    Part of an agent payments stack for Arc:
+    <a href="https://github.com/Mnorbert87/arc-agent-guard" target="_blank" rel="noopener">guard</a>,
+    <a href="https://github.com/Mnorbert87/arc-x402-agent" target="_blank" rel="noopener">x402-agent</a>,
+    <a href="https://github.com/Mnorbert87/arc-streaming-pay" target="_blank" rel="noopener">streaming-pay</a>,
+    <a href="https://github.com/Mnorbert87/arc-conditional-pay" target="_blank" rel="noopener">conditional-pay</a>,
+    <a href="https://github.com/Mnorbert87" target="_blank" rel="noopener">more</a>.
+    Testnet only. The guard runs in your browser; payments go through your own wallet.
+  </p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
