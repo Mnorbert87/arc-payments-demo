@@ -152,8 +152,40 @@ document.querySelectorAll(".tab").forEach(b => {
     b.classList.add("on");
     $("tab-guard").style.display = b.dataset.tab === "guard" ? "" : "none";
     $("tab-stream").style.display = b.dataset.tab === "stream" ? "" : "none";
+    $("tab-events").style.display = b.dataset.tab === "events" ? "" : "none";
+    if (b.dataset.tab === "events") fetchEvents();
   };
 });
+
+// ---- events feed (read side, mirrors arc-event-hub) ----
+async function fetchEvents() {
+  if (!account) { $("evMsg").textContent = "connect your wallet first"; return; }
+  $("evMsg").textContent = "loading...";
+  try {
+    const url = `https://testnet.arcscan.app/api?module=account&action=txlist&address=${account}&sort=desc&page=1&offset=20`;
+    const r = await fetch(url);
+    const data = await r.json();
+    const txs = Array.isArray(data.result) ? data.result : [];
+    const body = $("evList").querySelector("tbody");
+    body.innerHTML = "";
+    $("evEmpty").style.display = txs.length ? "none" : "block";
+    const me = account.toLowerCase();
+    for (const t of txs) {
+      const out = (t.from || "").toLowerCase() === me;
+      const cp = out ? (t.to || "") : (t.from || "");
+      const usdc = Number(ethers.formatUnits(BigInt(t.value || "0"), 18)).toFixed(4);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${new Date(Number(t.timeStamp) * 1000).toLocaleString()}</td>`
+        + `<td>${out ? "out" : "in"}</td><td>${usdc}</td>`
+        + `<td><code>${cp ? cp.slice(0,6) + "…" + cp.slice(-4) : "-"}</code></td>`
+        + `<td><a href="${EXPLORER}/tx/${t.hash}" target="_blank" rel="noopener">view</a></td>`;
+      body.appendChild(tr);
+    }
+    $("evMsg").textContent = txs.length ? `${txs.length} recent` : "no activity yet";
+  } catch (e) {
+    $("evMsg").textContent = "could not load: " + (e.message || e);
+  }
+}
 
 // ---- streaming (recurring payments), mirrors arc-streaming-pay ----
 function schedules() { return JSON.parse(localStorage.getItem("schedules") || "[]"); }
@@ -230,6 +262,7 @@ function renderSchedules() {
 
 $("sCreate").onclick = createSchedule;
 $("sRun").onclick = runDue;
+$("evRefresh").onclick = fetchEvents;
 
 loadPolicy();
 renderLog();

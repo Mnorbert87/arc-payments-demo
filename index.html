@@ -67,6 +67,7 @@
   <div class="tabs">
     <button class="tab on" data-tab="guard">Guard</button>
     <button class="tab" data-tab="stream">Streaming</button>
+    <button class="tab" data-tab="events">Events</button>
   </div>
 
   <div id="tab-guard">
@@ -130,6 +131,15 @@
       <p id="sEmpty" class="muted">No schedules yet. Create one above, then Run due now to send what is due. The browser schedules, your wallet sends.</p>
     </div>
   </div><!-- /tab-stream -->
+
+  <div id="tab-events" style="display:none">
+    <div class="card">
+      <h2>Activity</h2>
+      <div class="row" style="margin-bottom:10px"><button id="evRefresh" class="ghost">Refresh</button><span id="evMsg" class="muted"></span></div>
+      <table id="evList"><thead><tr><th>Time</th><th>Dir</th><th>USDC</th><th>Counterparty</th><th>Tx</th></tr></thead><tbody></tbody></table>
+      <p id="evEmpty" class="muted">Connect your wallet to see its incoming and outgoing USDC activity on Arc, straight from the explorer. This is the read side of <a href="https://github.com/Mnorbert87/arc-event-hub" target="_blank" rel="noopener">arc-event-hub</a>.</p>
+    </div>
+  </div><!-- /tab-events -->
 
   <p class="foot">
     Part of an agent payments stack for Arc:
