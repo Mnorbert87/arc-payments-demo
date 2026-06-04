@@ -145,6 +145,93 @@ $("check").onclick = () => {
 };
 $("send").onclick = () => guardedSend($("send").dataset.force === "1");
 
+// ---- tabs ----
+document.querySelectorAll(".tab").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    $("tab-guard").style.display = b.dataset.tab === "guard" ? "" : "none";
+    $("tab-stream").style.display = b.dataset.tab === "stream" ? "" : "none";
+  };
+});
+
+// ---- streaming (recurring payments), mirrors arc-streaming-pay ----
+function schedules() { return JSON.parse(localStorage.getItem("schedules") || "[]"); }
+function saveSchedules(a) { localStorage.setItem("schedules", JSON.stringify(a)); }
+
+function dueTimes(s, now) {
+  // scheduled times start + i*interval that are <= now and not yet paid
+  const out = [];
+  let i = s.paidCount;
+  while (true) {
+    if (s.maxPayments != null && i >= s.maxPayments) break;
+    const t = s.startTs + i * s.intervalSec;
+    if (t > now) break;
+    out.push(t);
+    i++;
+  }
+  return out;
+}
+
+function createSchedule() {
+  const payee = $("sPayee").value.trim().toLowerCase();
+  const amount = parseFloat($("sAmt").value);
+  const intervalSec = parseInt($("sInt").value, 10);
+  const maxPayments = $("sMax").value ? parseInt($("sMax").value, 10) : null;
+  if (!/^0x[0-9a-f]{40}$/.test(payee)) { $("sMsg").textContent = "invalid recipient"; return; }
+  if (!(amount > 0)) { $("sMsg").textContent = "amount must be positive"; return; }
+  if (!(intervalSec > 0)) { $("sMsg").textContent = "interval must be positive"; return; }
+  const arr = schedules();
+  arr.unshift({ id: Date.now(), payee, amount, intervalSec, maxPayments,
+                startTs: Math.floor(Date.now() / 1000), paidCount: 0, status: "active", memo: $("sMemo").value.trim() });
+  saveSchedules(arr);
+  $("sPayee").value = $("sAmt").value = $("sInt").value = $("sMax").value = $("sMemo").value = "";
+  $("sMsg").textContent = "created";
+  setTimeout(() => ($("sMsg").textContent = ""), 1500);
+  renderSchedules();
+}
+
+async function runDue() {
+  if (!signer) { $("sMsg").textContent = "connect your wallet first"; return; }
+  const now = Math.floor(Date.now() / 1000);
+  const arr = schedules();
+  let paid = 0;
+  for (const s of arr) {
+    if (s.status !== "active") continue;
+    const due = dueTimes(s, now);
+    for (const _ of due) {
+      try {
+        const tx = await signer.sendTransaction({ to: s.payee, value: ethers.parseUnits(String(s.amount), 18) });
+        s.paidCount += 1; paid += 1;
+        logRow(s.payee, s.amount, "stream", tx.hash);
+        if (s.maxPayments != null && s.paidCount >= s.maxPayments) s.status = "completed";
+      } catch (e) {
+        $("sMsg").textContent = "stopped: " + (e.shortMessage || e.message || e);
+        saveSchedules(arr); renderSchedules(); return;
+      }
+    }
+  }
+  saveSchedules(arr); renderSchedules(); refreshBalance();
+  $("sMsg").textContent = paid ? `sent ${paid} payment(s)` : "nothing due";
+}
+
+function renderSchedules() {
+  const arr = schedules();
+  const body = $("sList").querySelector("tbody");
+  body.innerHTML = "";
+  $("sEmpty").style.display = arr.length ? "none" : "block";
+  for (const s of arr) {
+    const tr = document.createElement("tr");
+    const cap = s.maxPayments != null ? "/" + s.maxPayments : "";
+    tr.innerHTML = `<td><code>${s.payee.slice(0,6)}…${s.payee.slice(-4)}</code></td><td>${s.amount}</td><td>${s.intervalSec}s</td><td>${s.paidCount}${cap}</td><td>${s.status}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+$("sCreate").onclick = createSchedule;
+$("sRun").onclick = runDue;
+
 loadPolicy();
 renderLog();
+renderSchedules();
 if (window.ethereum) window.ethereum.on?.("accountsChanged", () => location.reload());
